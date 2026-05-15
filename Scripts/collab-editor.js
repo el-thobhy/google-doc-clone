@@ -69,6 +69,7 @@ var CollabEditor = (function ($) {
     var _lastContent = '';
     var _isRemoteUpdate = false;
     var _attached = false;
+    var _connected = false;
     var _debounceTimer = null;
     var _boundHandlers = {};
 
@@ -166,19 +167,23 @@ var CollabEditor = (function ($) {
 
     function _startConnection() {
         $.connection.hub.start().done(function () {
+            _connected = true;
             _hub.server.joinDocument(_config.documentId, _config.userName);
             _fireConnectionChanged(true);
         }).fail(function (err) {
+            _connected = false;
             console.error('[CollabEditor] SignalR connection failed:', err);
             _fireConnectionChanged(false);
         });
 
         $.connection.hub.disconnected(function () {
+            _connected = false;
             _fireConnectionChanged(false);
             // Auto-reconnect
             setTimeout(function () {
                 if (_attached) {
                     $.connection.hub.start().done(function () {
+                        _connected = true;
                         _hub.server.joinDocument(_config.documentId, _config.userName);
                         _fireConnectionChanged(true);
                     });
@@ -203,7 +208,7 @@ var CollabEditor = (function ($) {
     }
 
     function _sendChanges() {
-        if (!_attached || !_editor) return;
+        if (!_attached || !_editor || !_connected) return;
 
         var currentContent = _editor.getContent();
 
@@ -216,8 +221,13 @@ var CollabEditor = (function ($) {
         var patchText = _dmp.patch_toText(patches);
 
         if (patchText) {
-            _hub.server.sendPatch(_config.documentId, patchText, _config.userName);
-            _hub.server.updateServerContent(_config.documentId, currentContent);
+            try {
+                _hub.server.sendPatch(_config.documentId, patchText, _config.userName);
+                _hub.server.updateServerContent(_config.documentId, currentContent);
+            } catch (e) {
+                console.warn('[CollabEditor] Failed to send patch, connection not ready:', e.message);
+                return;
+            }
         }
 
         _lastContent = currentContent;
@@ -308,6 +318,7 @@ var CollabEditor = (function ($) {
 
             _editor = null;
             _attached = false;
+            _connected = false;
             _lastContent = '';
             _isRemoteUpdate = false;
 
@@ -364,7 +375,7 @@ var CollabEditor = (function ($) {
          * @returns {boolean}
          */
         isConnected: function () {
-            return $.connection.hub && $.connection.hub.state === $.signalR.connectionState.connected;
+            return _connected;
         },
 
         /**

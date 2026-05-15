@@ -63,6 +63,15 @@ namespace test_google_doc.Hubs
             DocumentContents[documentId] = content;
         }
 
+        /// <summary>
+        /// Dipanggil saat user mengirim pesan chat
+        /// </summary>
+        public void SendChatMessage(string documentId, string userName, string message)
+        {
+            // Broadcast pesan ke semua user di group (termasuk pengirim)
+            Clients.Group(documentId).ReceiveChatMessage(userName, message, System.DateTime.Now.ToString("HH:mm"));
+        }
+
         public override Task OnDisconnected(bool stopCalled)
         {
             // Hapus user dari semua dokumen

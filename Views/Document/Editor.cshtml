@@ -10,6 +10,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>@ViewBag.Title</title>
     <link href="~/Content/bootstrap.min.css" rel="stylesheet" />
+    <link href="~/Content/collab-chat.css" rel="stylesheet" />
     <style>
         * {
             margin: 0;
@@ -183,6 +184,25 @@
         </div>
     </div>
 
+    <!-- Chat Toggle Button -->
+    <button class="chat-toggle-btn" id="chatToggleBtn" title="Chat">
+        💬
+        <span class="chat-badge" id="chatBadge">0</span>
+    </button>
+
+    <!-- Chat Panel -->
+    <div class="chat-panel" id="chatPanel">
+        <div class="chat-header">
+            <span>💬 Chat Dokumen</span>
+            <button class="chat-close" id="chatCloseBtn">&times;</button>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-area">
+            <input type="text" id="chatInput" placeholder="Ketik pesan..." autocomplete="off" />
+            <button id="chatSendBtn">➤</button>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="~/Frest/tinymce/tinymce.min.js"></script>
     <script src="~/Scripts/jquery-3.7.0.min.js"></script>
@@ -190,6 +210,7 @@
     <script src="~/signalr/hubs"></script>
     <script src="~/Scripts/diff_match_patch.js"></script>
     <script src="~/Scripts/collab-editor.js"></script>
+    <script src="~/Scripts/collab-chat.js"></script>
 
     <script>
         (function () {
@@ -199,7 +220,13 @@
             var documentId = '@Html.Raw(ViewBag.DocumentId)';
             var avatarColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#30cfd0'];
 
-            // Inisialisasi TinyMCE dengan config kamu sendiri
+            // === INIT CHAT (sebelum connection start) ===
+            CollabChat.init({
+                userName: userName,
+                documentId: documentId
+            });
+
+            // === TINYMCE + COLLABORATION ===
             tinymce.init({
                 selector: '#collaborativeEditor',
                 height: 600,
@@ -218,10 +245,7 @@
                 promotion: false,
 
                 setup: function (editor) {
-                    // === Custom buttons, shortcuts, dll bisa ditaruh di sini ===
-
                     editor.on('init', function () {
-                        // Attach collaboration setelah editor ready
                         CollabEditor.attach(editor, {
                             userName: userName,
                             documentId: documentId,
