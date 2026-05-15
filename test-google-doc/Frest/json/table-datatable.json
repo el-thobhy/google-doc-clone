@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "doc_number": "DVL-DOC-1",
+      "full_name": "Document1",
+      "creator": "Bilal.Rahmanto",
+      "start_date": "09/23/2021",
+      "status": 2
+    },
+    {
+      "id": 2,
+      "doc_number": "DVL-DOC-2",
+      "full_name": "Document2",
+      "creator": "Andhika.Purwanto",
+      "start_date": "05/20/2021",
+      "status": 2
+    },
+    {
+      "id": 3,
+      "doc_number": "DVL-DOC-3",
+      "full_name": "Document3",
+      "creator": "Diky.Darmanto",
+      "start_date": "03/24/2021",
+      "status": 5
+    }
+  ]
+}
