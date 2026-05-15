@@ -1,3 +1,19 @@
-*
-!obj\Docker\publish\*
-!obj\Docker\empty\
+# Git
+.git
+.gitignore
+
+# Visual Studio
+.vs
+*.user
+*.suo
+
+# Build output
+bin/
+obj/
+
+# Subfolder duplicate (tidak dipakai)
+test-google-doc/
+
+# Misc
+*.md
+LICENSE
