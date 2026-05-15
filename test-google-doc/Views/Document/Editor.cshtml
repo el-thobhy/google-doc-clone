@@ -1,0 +1,416 @@
+@{
+    ViewBag.Title = "Collaborative Editor";
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@ViewBag.Title</title>
+    <link href="~/Content/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-header {
+            background: white;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            z-index: 100;
+        }
+
+        .editor-header .doc-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .editor-header .doc-id {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .user-info .user-name {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .online-users {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 14px;
+            position: relative;
+        }
+
+        .user-avatar::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 10px;
+            height: 10px;
+            background: #4caf50;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+
+        .editor-container {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            overflow: auto;
+        }
+
+        .editor-wrapper {
+            width: 100%;
+            max-width: 900px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+
+        .status-bar {
+            background: #f8f9fa;
+            padding: 6px 16px;
+            font-size: 12px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+
+        .status-dot.connected {
+            background: #4caf50;
+        }
+
+        .status-dot.disconnected {
+            background: #f44336;
+        }
+
+        .btn-logout {
+            background: #ff5252;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .btn-logout:hover {
+            background: #d32f2f;
+            color: white;
+        }
+
+        .tox-tinymce {
+            border: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-header">
+        <div>
+            <div class="doc-title">📝 Collaborative Editor</div>
+            <div class="doc-id">Dokumen: <strong id="docIdDisplay">@ViewBag.DocumentId</strong></div>
+        </div>
+        <div class="user-info">
+            <div class="online-users" id="onlineUsers"></div>
+            <span class="user-name">👤 @ViewBag.UserName</span>
+            <a href="@Url.Action("Logout", "Document")" class="btn-logout">Keluar</a>
+        </div>
+    </div>
+
+    <div class="editor-container">
+        <div class="editor-wrapper">
+            <textarea id="collaborativeEditor"></textarea>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Menghubungkan...</span>
+                </div>
+                <div id="lastActivity"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="~/Frest/tinymce/tinymce.min.js"></script>
+    <script src="~/Scripts/jquery-3.7.0.min.js"></script>
+    <script src="~/Scripts/jquery.signalR-2.4.3.min.js"></script>
+    <script src="~/signalr/hubs"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
+
+    <script>
+        (function () {
+            'use strict';
+
+            // === KONFIGURASI ===
+            var userName = '@Html.Raw(ViewBag.UserName)';
+            var documentId = '@Html.Raw(ViewBag.DocumentId)';
+            var dmp = new diff_match_patch();
+
+            // State
+            var lastContent = '';
+            var isRemoteUpdate = false;
+            var editorReady = false;
+            var debounceTimer = null;
+
+            // Warna avatar untuk user
+            var avatarColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#30cfd0'];
+
+            // === INISIALISASI TINYMCE ===
+            tinymce.init({
+                selector: '#collaborativeEditor',
+                height: 600,
+                menubar: 'file edit view insert format tools table',
+                plugins: [
+                    'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+                    'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                    'insertdatetime', 'media', 'table', 'wordcount'
+                ],
+                toolbar: 'undo redo | blocks | bold italic underline strikethrough | ' +
+                    'forecolor backcolor | alignleft aligncenter alignright alignjustify | ' +
+                    'bullist numlist outdent indent | link image table | removeformat | fullscreen',
+                content_style: 'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; line-height: 1.6; padding: 16px; }',
+                branding: false,
+                statusbar: false,
+                promotion: false,
+                setup: function (editor) {
+                    editor.on('init', function () {
+                        editorReady = true;
+                        startSignalR();
+                    });
+
+                    // Deteksi perubahan konten
+                    editor.on('input', function () {
+                        if (!isRemoteUpdate) {
+                            debounceSendChanges();
+                        }
+                    });
+
+                    editor.on('change', function () {
+                        if (!isRemoteUpdate) {
+                            debounceSendChanges();
+                        }
+                    });
+
+                    editor.on('keyup', function () {
+                        if (!isRemoteUpdate) {
+                            debounceSendChanges();
+                        }
+                    });
+                }
+            });
+
+            // === DEBOUNCE UNTUK MENGIRIM PERUBAHAN ===
+            function debounceSendChanges() {
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                }
+                debounceTimer = setTimeout(function () {
+                    sendChanges();
+                }, 300); // 300ms debounce
+            }
+
+            // === SIGNALR ===
+            var hub = $.connection.documentHub;
+
+            // Handler: Menerima patch dari user lain
+            hub.client.receivePatch = function (patchText, fromUser) {
+                if (!editorReady) return;
+
+                try {
+                    var editor = tinymce.get('collaborativeEditor');
+                    var currentContent = editor.getContent();
+
+                    // Apply patch menggunakan diff-match-patch
+                    var patches = dmp.patch_fromText(patchText);
+                    var result = dmp.patch_apply(patches, currentContent);
+                    var newContent = result[0];
+                    var success = result[1];
+
+                    // Cek apakah semua patch berhasil di-apply
+                    var allSuccess = success.every(function (s) { return s; });
+
+                    if (allSuccess && newContent !== currentContent) {
+                        // Simpan posisi cursor
+                        var bookmark = editor.selection.getBookmark(2, true);
+
+                        isRemoteUpdate = true;
+                        editor.setContent(newContent);
+                        lastContent = newContent;
+
+                        // Restore posisi cursor
+                        try {
+                            editor.selection.moveToBookmark(bookmark);
+                        } catch (e) {
+                            // Jika bookmark gagal, biarkan saja
+                        }
+                        isRemoteUpdate = false;
+
+                        updateLastActivity(fromUser + ' mengedit dokumen');
+                    } else if (!allSuccess) {
+                        // Jika patch gagal, minta full content
+                        console.warn('Patch apply gagal, meminta full sync...');
+                    }
+                } catch (e) {
+                    console.error('Error applying patch:', e);
+                }
+            };
+
+            // Handler: Menerima full content (saat join atau fallback)
+            hub.client.receiveFullContent = function (content) {
+                if (!editorReady) return;
+
+                var editor = tinymce.get('collaborativeEditor');
+                isRemoteUpdate = true;
+                editor.setContent(content || '');
+                lastContent = content || '';
+                isRemoteUpdate = false;
+            };
+
+            // Handler: Update daftar user online
+            hub.client.updateUserList = function (users) {
+                renderUserList(users);
+            };
+
+            // === MULAI KONEKSI SIGNALR ===
+            function startSignalR() {
+                $.connection.hub.start().done(function () {
+                    // Join dokumen
+                    hub.server.joinDocument(documentId, userName);
+                    setConnectionStatus(true);
+                    updateLastActivity('Terhubung ke dokumen');
+                }).fail(function (err) {
+                    console.error('SignalR connection failed:', err);
+                    setConnectionStatus(false);
+                });
+
+                $.connection.hub.disconnected(function () {
+                    setConnectionStatus(false);
+                    // Reconnect setelah 5 detik
+                    setTimeout(function () {
+                        $.connection.hub.start().done(function () {
+                            hub.server.joinDocument(documentId, userName);
+                            setConnectionStatus(true);
+                        });
+                    }, 5000);
+                });
+            }
+
+            // === KIRIM PERUBAHAN (DIFF/PATCH) ===
+            function sendChanges() {
+                if (!editorReady) return;
+
+                var editor = tinymce.get('collaborativeEditor');
+                var currentContent = editor.getContent();
+
+                if (currentContent === lastContent) return;
+
+                // Buat diff/patch
+                var diffs = dmp.diff_main(lastContent, currentContent);
+                dmp.diff_cleanupEfficiency(diffs);
+                var patches = dmp.patch_make(lastContent, diffs);
+                var patchText = dmp.patch_toText(patches);
+
+                if (patchText) {
+                    // Kirim patch ke server
+                    hub.server.sendPatch(documentId, patchText, userName);
+
+                    // Update server content secara periodik
+                    hub.server.updateServerContent(documentId, currentContent);
+                }
+
+                lastContent = currentContent;
+                updateLastActivity('Kamu mengedit dokumen');
+            }
+
+            // === UI HELPERS ===
+            function renderUserList(users) {
+                var container = document.getElementById('onlineUsers');
+                container.innerHTML = '';
+
+                users.forEach(function (user, index) {
+                    var color = avatarColors[index % avatarColors.length];
+                    var initial = user.charAt(0).toUpperCase();
+                    var avatar = document.createElement('div');
+                    avatar.className = 'user-avatar';
+                    avatar.style.backgroundColor = color;
+                    avatar.textContent = initial;
+                    avatar.title = user + ' (online)';
+                    container.appendChild(avatar);
+                });
+            }
+
+            function setConnectionStatus(connected) {
+                var dot = document.getElementById('statusDot');
+                var text = document.getElementById('statusText');
+
+                if (connected) {
+                    dot.className = 'status-dot connected';
+                    text.textContent = 'Terhubung';
+                } else {
+                    dot.className = 'status-dot disconnected';
+                    text.textContent = 'Terputus - mencoba menghubungkan kembali...';
+                }
+            }
+
+            function updateLastActivity(message) {
+                var el = document.getElementById('lastActivity');
+                var time = new Date().toLocaleTimeString('id-ID');
+                el.textContent = message + ' (' + time + ')';
+            }
+        })();
+    </script>
+</body>
+</html>
